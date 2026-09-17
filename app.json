@@ -13,7 +13,6 @@
     "icon": "./assets/icon.png",
     "android": {
       "package": "com.plusnet.kasir",
-      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#f4fcf2"

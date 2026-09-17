@@ -3,12 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../theme';
-import { BackButton } from '../components/UI';
 
 export default function ScanBarcodeScreen({ navigation, route }) {
-  const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -48,42 +45,21 @@ export default function ScanBarcodeScreen({ navigation, route }) {
     );
   }
 
+  // STEP 1 ISOLATION TEST: CameraView rendered ALONE, no overlay/sibling above it.
   return (
     <View style={styles.container}>
-      {/* Kamera hanya aktif jika layar sedang dalam fokus */}
       {isFocused && (
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
+          onCameraReady={() => console.log('CAMERA IS READY (isolated, no overlay)')}
+          onMountError={(e) => console.log('CAMERA MOUNT ERROR:', e)}
           onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
           barcodeScannerSettings={{
             barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a'],
           }}
         />
       )}
-
-      {/* Overlays UI */}
-      <View style={styles.overlayContainer} pointerEvents="box-none">
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
-          <BackButton />
-          <Text style={styles.headerTitle}>Pemindai Barcode Modern</Text>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => setScanned(false)}>
-            <Ionicons name="refresh-outline" size={22} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Kotak Target Frame */}
-        <View style={styles.overlayCenter}>
-          <View style={styles.scanBox}>
-            <View style={[styles.corner, styles.topLeft]} />
-            <View style={[styles.corner, styles.topRight]} />
-            <View style={[styles.corner, styles.bottomLeft]} />
-            <View style={[styles.corner, styles.bottomRight]} />
-          </View>
-          <Text style={styles.instructionText}>Arahkan kamera ke Barcode / QR Code</Text>
-        </View>
-      </View>
     </View>
   );
 }
@@ -92,10 +68,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
-  },
-  overlayContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
   },
   centerContainer: {
     flex: 1,
@@ -121,56 +93,5 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontFamily: 'Manrope_700Bold',
     fontSize: 14,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  headerTitle: {
-    color: '#FFF',
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 16,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.full,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  overlayCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanBox: {
-    width: 250,
-    height: 250,
-    position: 'relative',
-  },
-  corner: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderColor: '#00FF66',
-  },
-  topLeft: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 8 },
-  topRight: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 8 },
-  bottomLeft: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 8 },
-  bottomRight: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 8 },
-  instructionText: {
-    color: '#FFF',
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 13,
-    marginTop: spacing.lg,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
   },
 });
