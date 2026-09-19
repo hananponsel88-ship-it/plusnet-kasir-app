@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   FlatList,
-  Alert,
   Image,
   StyleSheet,
   ScrollView,
@@ -16,10 +15,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../utils/supabase';
 import { colors, radius, spacing, typography, shadow } from '../theme';
-import { AppButton, EmptyState, AnimatedModal } from '../components/UI';
+import { EmptyState } from '../components/UI';
 import { CheckoutModal, ReceiptModal } from '../components/Payment';
 import CartBar from '../components/CartBar';
-import { formatRupiah, formatRupiahShort } from '../utils/format';
+import CartSheet from '../components/CartSheet';
+import { formatRupiahShort } from '../utils/format';
 import { fetchProducts, createTransaction } from '../services/api';
 import { useCart } from '../context/CartContext';
 
@@ -30,8 +30,8 @@ export default function KasirScreen({ navigation }) {
   const [products, setProducts] = useState([]);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Semua');
-  const { cartItems, total, count, addToCart, changeQty, clearCart } = useCart();
-  const [showCart, setShowCart] = useState(false);
+  const { cartItems, total, count, addToCart, clearCart } = useCart();
+  const cartSheetRef = useRef(null);
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutDirect, setCheckoutDirect] = useState(false);
   const [receipt, setReceipt] = useState(null);
@@ -73,8 +73,8 @@ export default function KasirScreen({ navigation }) {
   const openCheckout = () => {
     if (cartItems.length === 0) return;
     setCheckoutDirect(false);
-    setShowCheckout(true);
-    setShowCart(false);
+    cartSheetRef.current?.dismiss();
+    setTimeout(() => setShowCheckout(true), 240);
   };
 
   const openCheckoutFast = () => {
@@ -83,9 +83,11 @@ export default function KasirScreen({ navigation }) {
     setShowCheckout(true);
   };
 
-  const tutupCheckout = () => {
+  const tutupCheckout = (afterPay = false) => {
     setShowCheckout(false);
-    if (!checkoutDirect) setShowCart(true);
+    if (!checkoutDirect && !afterPay) {
+      setTimeout(() => cartSheetRef.current?.present(), 300);
+    }
   };
 
   const handlePay = async (paymentMethod) => {
@@ -109,8 +111,6 @@ export default function KasirScreen({ navigation }) {
       items,
     });
     clearCart();
-    setShowCart(false);
-    setShowCheckout(false);
     setReceipt({
       code: result.code,
       subtotal: total,
@@ -214,106 +214,27 @@ export default function KasirScreen({ navigation }) {
       {count > 0 && (
         <CartBar
           onPay={openCheckoutFast}
+          onOpenCart={() => cartSheetRef.current?.present()}
           style={[styles.floatingCartBar, { bottom: insets.bottom > 0 ? insets.bottom + 12 : 20 }]}
         />
       )}
 
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          count > 0 && [styles.fabRaised, { bottom: insets.bottom > 0 ? insets.bottom + 80 : 88 }],
-        ]}
-        onPress={() => setShowCart(true)}
-        activeOpacity={0.9}
-      >
-        <LinearGradient
-          colors={[colors.gradientDark.start, colors.gradientDark.end]}
-          style={styles.fabGradient}
+      {count === 0 && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => cartSheetRef.current?.present()}
+          activeOpacity={0.9}
         >
-          <Ionicons name="cart" size={22} color={colors.surfaceBright} />
-          {count > 0 && (
-            <View style={styles.fabBadge}>
-              <Text style={styles.fabBadgeText}>{count}</Text>
-            </View>
-          )}
-        </LinearGradient>
-      </TouchableOpacity>
+          <LinearGradient
+            colors={[colors.gradientDark.start, colors.gradientDark.end]}
+            style={styles.fabGradient}
+          >
+            <Ionicons name="cart" size={22} color={colors.surfaceBright} />
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
 
-      <AnimatedModal visible={showCart} onClose={() => setShowCart(false)} align="bottom">
-        <View style={styles.cartSheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.cartHeader}>
-              <View>
-                <Text style={styles.cartTitle}>Item Belanja</Text>
-                <Text style={styles.cartSubTitle}>{count} Barang Dipilih</Text>
-              </View>
-              {cartItems.length > 0 && (
-                <TouchableOpacity onPress={clearCart} style={styles.cartDeleteBtn}>
-                  <Ionicons name="trash-bin-outline" size={16} color={colors.error} />
-                  <Text style={styles.cartDeleteText}>Kosongkan</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <FlatList
-              data={cartItems}
-              keyExtractor={(item) => item.key}
-              style={{ flex: 1 }}
-              contentContainerStyle={styles.cartList}
-              ListEmptyComponent={<EmptyState title="Keranjang Masih Kosong" icon="cart-outline" />}
-              renderItem={({ item }) => (
-                <View style={styles.cartItemCard}>
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={styles.cartItemName}>{item.name}</Text>
-                    <Text style={styles.cartItemMeta}>
-                      {formatRupiah(item.price)} / {item.unit_label}
-                    </Text>
-                  </View>
-                  <View style={styles.stepperContainer}>
-                    <TouchableOpacity style={styles.stepBtn} onPress={() => changeQty(item.key, -1)}>
-                      <Ionicons name="remove" size={14} color={colors.onSurface} />
-                    </TouchableOpacity>
-                    <Text style={styles.stepValue}>{item.qty}</Text>
-                    <TouchableOpacity style={[styles.stepBtn, styles.stepBtnAdd]} onPress={() => changeQty(item.key, 1)}>
-                      <Ionicons name="add" size={14} color={colors.primary} />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.cartItemSub}>{formatRupiah(item.subtotal)}</Text>
-                </View>
-              )}
-            />
-
-            <View style={[styles.cartFooter, { paddingBottom: insets.bottom > 0 ? insets.bottom + spacing.xs : spacing.md }]}>
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>Total Ringkasan</Text>
-                <Text style={styles.totalValue}>{formatRupiah(total)}</Text>
-              </View>
-
-              <View style={styles.actionsRow}>
-                <AppButton
-                  title="Struk"
-                  variant="outline"
-                  icon="receipt-outline"
-                  onPress={() => Alert.alert('Informasi Struk', 'Struk otomatis dapat dicetak setelah transaksi selesai.')}
-                  style={styles.flexBtn}
-                />
-                <AppButton
-                  title="WhatsApp"
-                  variant="outline"
-                  icon="logo-whatsapp"
-                  onPress={() => Alert.alert('WhatsApp', 'Nota digital dapat dikirim langsung ke WA pelanggan.')}
-                  style={styles.flexBtn}
-                />
-              </View>
-
-              <AppButton
-                title="Lanjut Pembayaran"
-                icon="arrow-forward-outline"
-                onPress={openCheckout}
-              />
-            </View>
-          </View>
-      </AnimatedModal>
+      <CartSheet ref={cartSheetRef} onCheckout={openCheckout} />
 
       <CheckoutModal
         visible={showCheckout}
@@ -576,135 +497,5 @@ const styles = StyleSheet.create({
     ...shadow.sheet,
   },
   fabGradient: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
-  fabRaised: { bottom: 80 },
   floatingCartBar: { position: 'absolute', left: spacing.md, right: spacing.md },
-  fabBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    backgroundColor: colors.error,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-    borderWidth: 1.5,
-    borderColor: colors.surfaceContainerLowest,
-  },
-  fabBadgeText: { color: colors.onError, fontSize: 10, fontFamily: 'Manrope_800ExtraBold' },
-  cartSheet: {
-    backgroundColor: colors.surfaceContainerLowest,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.lg,
-    paddingTop: spacing.xs,
-    maxHeight: '82%',
-    minHeight: '50%',
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.outlineVariant,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  cartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairline,
-  },
-  cartTitle: {
-    ...typography.headlineSm,
-    color: colors.onSurface,
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 18,
-  },
-  cartSubTitle: { ...typography.bodySm, color: colors.secondary, fontSize: 11 },
-  cartDeleteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6 },
-  cartDeleteText: { color: colors.error, fontSize: 12, fontFamily: 'Manrope_700Bold' },
-  cartList: { gap: spacing.xs, paddingVertical: spacing.md },
-  cartItemCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLow,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  cartItemName: {
-    ...typography.bodyMd,
-    color: colors.onSurface,
-    fontFamily: 'Manrope_700Bold',
-    fontSize: 13,
-  },
-  cartItemMeta: {
-    ...typography.bodySm,
-    color: colors.secondary,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: radius.xs,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    padding: 2,
-  },
-  stepBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: radius.xs,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepBtnAdd: { backgroundColor: colors.primarySoft },
-  stepValue: {
-    minWidth: 20,
-    textAlign: 'center',
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 12,
-    color: colors.onSurface,
-  },
-  cartItemSub: {
-    color: colors.onSurface,
-    fontFamily: 'Manrope_800ExtraBold',
-    fontSize: 13,
-    minWidth: 65,
-    textAlign: 'right',
-  },
-  cartFooter: {
-    borderTopWidth: 1,
-    borderTopColor: colors.hairline,
-    paddingTop: spacing.md,
-    gap: spacing.xs,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  totalLabel: {
-    ...typography.bodyLg,
-    color: colors.secondary,
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  totalValue: {
-    ...typography.headlineMd,
-    color: colors.primary,
-    fontFamily: 'Manrope_800ExtraBold',
-  },
-  actionsRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xs },
-  flexBtn: { flex: 1 },
 });

@@ -43,7 +43,7 @@ export default function SplashScreen({ navigation }) {
     <View style={[styles.container, { backgroundColor: theme.colors?.background || '#FFFFFF' }]}>
       <Animated.View style={{ opacity: fadeAnim }}>
         <Image
-          source={require('../assets/logo.png')}
+          source={require('../assets/logo  bnr.png')}
           style={styles.logo}
           resizeMode="contain"
         />

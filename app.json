@@ -6,15 +6,15 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo  bnr.png",
       "resizeMode": "contain",
       "backgroundColor": "#f4fcf2"
     },
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo  bnr.png",
     "android": {
       "package": "com.plusnet.kasir",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/logo  bnr.png",
         "backgroundColor": "#f4fcf2"
       },
       "permissions": [

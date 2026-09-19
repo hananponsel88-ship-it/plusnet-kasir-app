@@ -1,5 +1,7 @@
 import React from 'react';
 import { View, ActivityIndicator, LogBox } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { useFonts } from 'expo-font';
 import {
   Manrope_500Medium,
@@ -34,9 +36,11 @@ export default function App() {
   }
 
   return (
-    <>
-      <StatusBar style="dark" />
-      <AppNavigator />
-    </>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <BottomSheetModalProvider>
+        <StatusBar style="dark" />
+        <AppNavigator />
+      </BottomSheetModalProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,112 +7,303 @@ import {
   ScrollView,
   TextInput,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, {
+  Easing,
+  FadeInUp,
+  interpolate,
+  useAnimatedProps,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { colors, radius, spacing, typography, shadow } from '../theme';
 import { AppButton, AnimatedModal } from './UI';
 import { formatRupiah } from '../utils/format';
 
+const AnimatedText = Animated.createAnimatedComponent(Text);
+
+function rupiahWorklet(n) {
+  'worklet';
+  const num = Math.abs(Math.round(n));
+  const s = String(num);
+  let out = '';
+  let c = 0;
+  for (let i = s.length - 1; i >= 0; i--) {
+    out = s[i] + out;
+    c++;
+    if (c % 3 === 0 && i > 0) out = '.' + out;
+  }
+  return 'Rp ' + out;
+}
+
+// Angka Kembalian dengan count-up/count-down ringan (worklet, native driver).
+function AnimatedAmount({ value, style }) {
+  const to = Number(value) || 0;
+  const from = useSharedValue(to);
+  const progress = useSharedValue(0);
+  const prev = useRef(to);
+
+  useEffect(() => {
+    if (to === prev.current) return;
+    from.value = prev.current;
+    prev.current = to;
+    progress.value = 0;
+    progress.value = withTiming(1, {
+      duration: 480,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [to, from, progress]);
+
+  const animatedProps = useAnimatedProps(() => {
+    const current = interpolate(progress.value, [0, 1], [from.value, to]);
+    return { text: rupiahWorklet(current) };
+  });
+
+  return <AnimatedText animatedProps={animatedProps} style={style} />;
+}
+
+const PAYMENT_METHODS = [
+  { id: 'cash', label: 'Tunai', icon: 'cash-outline' },
+  { id: 'qris', label: 'QRIS', icon: 'qr-code-outline' },
+  { id: 'transfer', label: 'Transfer', icon: 'card-outline' },
+];
+
+const QUICK_NOMINALS = [4000, 20000, 50000, 100000];
+
 export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPayment }) {
+  const insets = useSafeAreaInsets();
+  const sheetRef = useRef(null);
+  const notifiedRef = useRef(false);
+
   const [method, setMethod] = useState('cash');
   const [cashAmount, setCashAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [payError, setPayError] = useState(null);
 
-  const quickNominals = [total, 20000, 50000, 100000];
+  const snapPoints = useMemo(() => ['94%'], []);
   const paid = method === 'cash' ? Number(cashAmount) || 0 : total;
-  const change = paid - total;
+  const change = Math.max(0, paid - total);
 
-  const handlePay = () => {
+  const notify = useCallback(
+    (afterPay) => {
+      if (notifiedRef.current) return;
+      notifiedRef.current = true;
+      onClose?.(afterPay);
+    },
+    [onClose]
+  );
+
+  useEffect(() => {
+    if (visible) {
+      notifiedRef.current = false;
+      setSuccess(false);
+      setPayError(null);
+      setSubmitting(false);
+      setCashAmount('');
+      sheetRef.current?.present();
+    } else {
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  // Animasi pop sukses
+  const successScale = useSharedValue(0.4);
+  const successOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (success) {
+      successOpacity.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+      successScale.value = withSequence(
+        withSpring(1.15, { damping: 9, stiffness: 240 }),
+        withSpring(1, { damping: 13, stiffness: 260 })
+      );
+    }
+  }, [success, successOpacity, successScale]);
+
+  const successOverlayStyle = useAnimatedStyle(() => ({
+    opacity: successOpacity.value,
+  }));
+
+  const successCircleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: successScale.value }],
+  }));
+
+  const handlePay = useCallback(async () => {
     if (method === 'cash' && paid < total) {
       Alert.alert('Uang Kurang', 'Nominal pembayaran tunai kurang dari total belanja.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       return;
     }
-    onConfirmPayment(method);
-    setCashAmount('');
-  };
+    setSubmitting(true);
+    setPayError(null);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      Keyboard.dismiss();
+      await onConfirmPayment(method);
+      setSuccess(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setTimeout(() => {
+        setSubmitting(false);
+        notify(true);
+      }, 1150);
+    } catch (e) {
+      setSubmitting(false);
+      setPayError(e?.message || 'Transaksi gagal, coba lagi.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method, paid, total, onConfirmPayment, notify]);
 
   return (
-    <AnimatedModal visible={visible} onClose={onClose} align="bottom">
-      <View style={styles.sheetContainer}>
-        <View style={styles.handle} />
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Pembayaran</Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close-circle" size={24} color={colors.secondary} />
-          </TouchableOpacity>
-        </View>
+    <BottomSheetModal
+      ref={sheetRef}
+      index={0}
+      snapPoints={snapPoints}
+      backgroundStyle={styles.sheetBg}
+      handleStyle={styles.handleStyle}
+      handleIndicatorStyle={styles.handleIndicator}
+      style={styles.sheetStyle}
+      enablePanDownToClose={!submitting}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      onDismiss={() => notify(false)}
+    >
+      <View style={styles.root}>
+        <BottomSheetView style={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+          <View style={styles.headerRow}>
+            <Text style={styles.modalTitle}>Pembayaran</Text>
+            <TouchableOpacity
+              onPress={() => {
+                notify(false);
+                sheetRef.current?.dismiss();
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close-circle" size={24} color={colors.secondary} />
+            </TouchableOpacity>
+          </View>
 
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Total Display */}
+          {/* Total Tagihan */}
           <View style={styles.totalBox}>
             <Text style={styles.totalLabel}>Total Tagihan</Text>
             <Text style={styles.totalAmount}>{formatRupiah(total)}</Text>
           </View>
 
-          {/* Payment Method Options */}
+          {/* Metode Pembayaran */}
           <Text style={styles.sectionLabel}>Metode Pembayaran</Text>
           <View style={styles.methodGrid}>
-            {[
-              { id: 'cash', label: 'Tunai', icon: 'cash-outline' },
-              { id: 'qris', label: 'QRIS', icon: 'qr-code-outline' },
-              { id: 'transfer', label: 'Transfer', icon: 'card-outline' },
-            ].map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                style={[styles.methodCard, method === m.id && styles.methodCardActive]}
-                onPress={() => setMethod(m.id)}
-              >
-                <Ionicons
-                  name={m.icon}
-                  size={20}
-                  color={method === m.id ? colors.primary : colors.secondary}
-                />
-                <Text style={[styles.methodText, method === m.id && styles.methodTextActive]}>
-                  {m.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {PAYMENT_METHODS.map((m) => {
+              const isActive = method === m.id;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={[styles.methodCard, isActive && styles.methodCardActive]}
+                  onPress={() => setMethod(m.id)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={m.icon}
+                    size={19}
+                    color={isActive ? colors.primary : colors.secondary}
+                  />
+                  <Text style={[styles.methodText, isActive && styles.methodTextActive]}>
+                    {m.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Cash Calculator Input */}
+          {/* Nominal Tunai */}
           {method === 'cash' && (
             <View style={styles.cashSection}>
-              <Text style={styles.sectionLabel}>Nominal Uang Diterima</Text>
-              <TextInput
-                style={styles.cashInput}
-                keyboardType="numeric"
-                placeholder="0"
-                value={cashAmount}
-                onChangeText={setCashAmount}
-              />
-
-              <View style={styles.quickNominalRow}>
-                {quickNominals.map((nom, i) => (
+              <View style={styles.inputRow}>
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputPrefix}>Rp</Text>
+                  <TextInput
+                    style={styles.cashInput}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={colors.outlineVariant}
+                    value={cashAmount}
+                    onChangeText={(t) => setCashAmount(t.replace(/[^0-9]/g, ''))}
+                    editable={!submitting && !success}
+                  />
+                </View>
+              </View>
+              <Text style={[styles.sectionLabel, styles.nominalHint]}>Nominal Uang Diterima</Text>
+              <View style={styles.quickRow}>
+                {QUICK_NOMINALS.map((nom) => (
                   <TouchableOpacity
-                    key={i}
+                    key={nom}
                     style={styles.quickChip}
                     onPress={() => setCashAmount(String(nom))}
+                    activeOpacity={0.8}
                   >
                     <Text style={styles.quickChipText}>{formatRupiah(nom)}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-
-              {paid >= total && (
-                <View style={styles.changeBox}>
-                  <Text style={styles.changeLabel}>Kembalian</Text>
-                  <Text style={styles.changeValue}>{formatRupiah(change)}</Text>
-                </View>
-              )}
             </View>
           )}
-        </ScrollView>
 
-        <View style={styles.modalFooter}>
-          <AppButton title="Selesaikan Transaksi" icon="checkmark-circle-outline" onPress={handlePay} />
-        </View>
+          {/* Kembalian */}
+          {method === 'cash' && paid >= total && (
+            <Animated.View
+              entering={FadeInUp.springify().damping(16).stiffness(180)}
+              style={styles.changeBox}
+            >
+              <Text style={styles.changeLabel}>Kembalian</Text>
+              <AnimatedAmount value={change} style={styles.changeValue} />
+            </Animated.View>
+          )}
+
+          {payError ? (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle" size={16} color={colors.error} />
+              <Text style={styles.errorText}>{payError}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.footer}>
+            <AppButton
+              title={submitting ? 'Memproses...' : 'Selesaikan Transaksi'}
+              icon={submitting ? undefined : 'checkmark-circle-outline'}
+              onPress={handlePay}
+              disabled={submitting}
+              loading={submitting}
+            />
+          </View>
+        </BottomSheetView>
+
+        {/* Pop-up sukses */}
+        {success && (
+          <Animated.View style={[StyleSheet.absoluteFill, styles.successOverlay, successOverlayStyle]}>
+            <Animated.View style={[styles.successCircle, successCircleStyle]}>
+              <LinearGradient
+                colors={[colors.gradient.start, colors.gradient.end]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <Ionicons name="checkmark" size={52} color={colors.onPrimary} />
+            </Animated.View>
+            <Text style={styles.successTitle}>Transaksi Berhasil!</Text>
+            <Text style={styles.successSub}>Pembayaran telah diterima. Menyiapkan struk...</Text>
+          </Animated.View>
+        )}
       </View>
-    </AnimatedModal>
+    </BottomSheetModal>
   );
 }
 
@@ -164,12 +355,22 @@ export function ReceiptModal({ receipt, storeName, onClose }) {
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   sheetContainer: {
     backgroundColor: colors.surfaceContainerLowest,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     padding: spacing.md,
     maxHeight: '85%',
+  },
+  sheetBg: {
+    backgroundColor: colors.surfaceContainerLowest,
+  },
+  sheetStyle: {
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    overflow: 'hidden',
+    ...shadow.sheet,
   },
   handle: {
     width: 36,
@@ -179,11 +380,24 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing.sm,
   },
-  modalHeader: {
+  handleStyle: {
+    paddingTop: spacing.sm,
+  },
+  handleIndicator: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.outlineVariant,
+  },
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   modalTitle: {
     ...typography.headlineSm,
@@ -192,50 +406,52 @@ const styles = StyleSheet.create({
   },
   totalBox: {
     backgroundColor: colors.surfaceContainerLow,
-    padding: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.md,
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   totalLabel: {
     ...typography.bodySm,
     color: colors.secondary,
   },
   totalAmount: {
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: 'Manrope_800ExtraBold',
     color: colors.primary,
-    marginTop: 4,
+    marginTop: 2,
   },
   sectionLabel: {
     fontFamily: 'Manrope_700Bold',
     fontSize: 13,
     color: colors.onSurface,
-    marginBottom: spacing.xs,
+    marginBottom: 6,
   },
   methodGrid: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
+    gap: 6,
+    marginBottom: spacing.sm,
   },
   methodCard: {
     flex: 1,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs + 2,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.hairline,
     backgroundColor: colors.surfaceContainerLow,
-    gap: 4,
   },
   methodCardActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
   methodText: {
-    fontSize: 11,
-    fontFamily: 'Manrope_600SemiBold',
+    fontSize: 13,
+    fontFamily: 'Manrope_700Bold',
     color: colors.secondary,
   },
   methodTextActive: {
@@ -245,26 +461,50 @@ const styles = StyleSheet.create({
   cashSection: {
     marginTop: spacing.xs,
   },
-  cashInput: {
+  inputRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 6,
+  },
+  inputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radius.md,
-    padding: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.surfaceContainerLow,
+  },
+  inputPrefix: {
+    fontSize: 18,
+    fontFamily: 'Manrope_800ExtraBold',
+    color: colors.primary,
+    marginRight: 4,
+  },
+  cashInput: {
+    flex: 1,
+    paddingVertical: spacing.sm,
     fontSize: 18,
     fontFamily: 'Manrope_800ExtraBold',
     color: colors.onSurface,
-    backgroundColor: colors.surfaceContainerLow,
-    textAlign: 'center',
+    textAlign: 'right',
+    padding: 0,
   },
-  quickNominalRow: {
+  nominalHint: {
+    marginBottom: 6,
+    color: colors.onSurfaceVariant,
+    fontSize: 12,
+  },
+  quickRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
-    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
   },
   quickChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
     backgroundColor: colors.surfaceContainerLow,
     borderRadius: radius.xs,
     borderWidth: 1,
@@ -272,26 +512,78 @@ const styles = StyleSheet.create({
   },
   quickChipText: {
     fontSize: 11,
-    fontFamily: 'Manrope_600SemiBold',
+    fontFamily: 'Manrope_700Bold',
     color: colors.onSurface,
   },
   changeBox: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.md,
-    padding: spacing.sm,
-    backgroundColor: colors.surfaceContainerLow,
+    marginTop: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primarySoft,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 184, 107, 0.4)',
   },
   changeLabel: {
-    fontFamily: 'Manrope_600SemiBold',
-    color: colors.secondary,
+    fontFamily: 'Manrope_700Bold',
+    color: colors.onPrimaryContainer,
   },
   changeValue: {
     fontFamily: 'Manrope_800ExtraBold',
     color: colors.primary,
-    fontSize: 16,
+    fontSize: 18,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.xs,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.dangerBg,
+    borderRadius: radius.xs,
+  },
+  errorText: {
+    color: colors.dangerText,
+    fontSize: 12,
+    fontFamily: 'Manrope_600SemiBold',
+    flex: 1,
+  },
+  footer: {
+    marginTop: spacing.sm,
+  },
+  successOverlay: {
+    backgroundColor: colors.surfaceContainerLowest,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  successCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+    ...shadow.btn,
+  },
+  successTitle: {
+    ...typography.headlineMd,
+    color: colors.onSurface,
+    fontFamily: 'Manrope_800ExtraBold',
+    textAlign: 'center',
+  },
+  successSub: {
+    ...typography.bodyMd,
+    color: colors.secondary,
+    textAlign: 'center',
+    marginTop: 4,
   },
   modalFooter: {
     marginTop: spacing.md,
