@@ -77,8 +77,8 @@ export const AppButton = memo(function AppButton({
     ? [colors.gradientAccent.start, colors.gradientAccent.end]
     : isPrimaryFill
     ? pressed
-      ? ['#0A6B5E', '#1B9E4B']
-      : ['#0E8F7E', '#22C55E']
+      ? [colors.gradientPressed.start, colors.gradientPressed.end]
+      : [colors.gradient.start, colors.gradient.end]
     : pressed
     ? [colors.gradientPressed.start, colors.gradientPressed.end]
     : [colors.gradient.start, colors.gradient.end];

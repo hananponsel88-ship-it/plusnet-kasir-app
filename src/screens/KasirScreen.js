@@ -80,6 +80,9 @@ export default function KasirScreen({ navigation }) {
   const openCheckoutFast = () => {
     if (cartItems.length === 0) return;
     setCheckoutDirect(true);
+    // Defensif: pastikan cart sheet tertutup dulu supaya tidak ada dua
+    // BottomSheetModal yang beranimasi/present bersamaan (no-op bila sudah tertutup).
+    cartSheetRef.current?.dismiss();
     setShowCheckout(true);
   };
 

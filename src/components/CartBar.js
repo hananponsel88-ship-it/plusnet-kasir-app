@@ -52,15 +52,22 @@ export default function CartBar({ onPay, onOpenCart, style }) {
   }, [payScale]);
 
   const handlePay = useCallback(() => {
+    if (count === 0) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    if (onPay) onPay();
-  }, [onPay]);
+    onPay?.();
+  }, [onPay, count]);
+
+  const handleOpenCart = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    onOpenCart?.();
+  }, [onOpenCart]);
 
   return (
     <Animated.View
       entering={FadeInUp.springify().damping(17).stiffness(150)}
       exiting={FadeOutDown.springify().damping(17).stiffness(150)}
       style={[styles.container, style]}
+      pointerEvents="auto"
     >
       <LinearGradient
         colors={[colors.gradientDark.start, colors.gradientDark.end]}
@@ -70,7 +77,10 @@ export default function CartBar({ onPay, onOpenCart, style }) {
       >
         <Pressable
           style={styles.tapArea}
-          onPress={onOpenCart}
+          onPress={handleOpenCart}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Lihat keranjang"
           android_ripple={{ color: 'rgba(255,255,255,0.08)', borderless: false }}
         >
           <View style={styles.iconWrapper}>
@@ -85,14 +95,20 @@ export default function CartBar({ onPay, onOpenCart, style }) {
           </View>
         </Pressable>
 
-        <Animated.View style={[styles.payButton, payBtnStyle]}>
-          <Pressable
-            onPressIn={payPressIn}
-            onPressOut={payPressOut}
-            onPress={handlePay}
-            android_ripple={{ color: 'rgba(255,255,255,0.16)', borderless: true }}
-            style={styles.payPress}
-          >
+        {/* Tombol Bayar Fast: Pressable polos di lapisan terluar supaya
+            jalur sentuh tidak melewati Animated.View (lebih andal di Android),
+            animasi scale hanya sebagai visual di dalam. */}
+        <Pressable
+          onPressIn={payPressIn}
+          onPressOut={payPressOut}
+          onPress={handlePay}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Bayar cepat"
+          android_ripple={{ color: 'rgba(255,255,255,0.16)', borderless: false }}
+          style={({ pressed }) => [styles.payButton, pressed && styles.payButtonPressed]}
+        >
+          <Animated.View style={[styles.payClip, payBtnStyle]}>
             <LinearGradient
               colors={[colors.gradient.start, colors.gradient.end]}
               start={{ x: 0, y: 0 }}
@@ -102,8 +118,8 @@ export default function CartBar({ onPay, onOpenCart, style }) {
               <Text style={styles.payText}>Bayar Fast</Text>
               <Ionicons name="flash" size={15} color={colors.onPrimary} />
             </LinearGradient>
-          </Pressable>
-        </Animated.View>
+          </Animated.View>
+        </Pressable>
       </LinearGradient>
     </Animated.View>
   );
@@ -112,6 +128,9 @@ export default function CartBar({ onPay, onOpenCart, style }) {
 const styles = StyleSheet.create({
   container: {
     borderRadius: radius.xl,
+    // Pastikan bar selalu di atas daftar produk (urutan sentuh Android ikut elevation/zIndex).
+    zIndex: 10,
+    elevation: 16,
     ...shadow.sheet,
   },
   bar: {
@@ -174,7 +193,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     ...shadow.btn,
   },
-  payPress: {
+  payButtonPressed: {
+    opacity: 0.92,
+  },
+  payClip: {
     borderRadius: radius.lg,
     overflow: 'hidden',
   },

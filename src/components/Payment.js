@@ -110,7 +110,12 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
       setPayError(null);
       setSubmitting(false);
       setCashAmount('');
-      sheetRef.current?.present();
+      // Tunda present satu frame agar layout BottomSheetModal sudah commit
+      // sebelum present() dipanggil (mencegah present yang no-op).
+      const raf = requestAnimationFrame(() => {
+        sheetRef.current?.present();
+      });
+      return () => cancelAnimationFrame(raf);
     } else {
       sheetRef.current?.dismiss();
     }

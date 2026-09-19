@@ -724,7 +724,9 @@ function KomputerCard({ komputer, sesi, dipakai, now, busy, onMulai, onSelesai }
       : { label: 'Dipakai', tone: 'primary', dot: colors.primary };
 
   return (
-    <View style={[styles.card, dipakai && styles.cardActive, habis && styles.cardHabis]}>
+    // Border merah (cardHabis) hanya untuk PC yang sedang dipakai dan waktunya habis.
+    // PC kosong tidak pernah dapat border merah, walau ada sisa sesi basi di cache/state.
+    <View style={[styles.card, dipakai && styles.cardActive, dipakai && habis && styles.cardHabis]}>
       {/* Header Unit */}
       <View style={styles.cardHeader}>
         <View style={styles.pcIcon}>
