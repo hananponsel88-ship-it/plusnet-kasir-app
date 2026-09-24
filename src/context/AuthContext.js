@@ -9,19 +9,52 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      setLoading(false);
-    });
+    let mounted = true;
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      setLoading(false);
-    });
+    // Pengaman: kalau getSession menggantung (offline / env placeholder),
+    // paksa loading mati setelah 8 detik supaya tidak spinner selamanya.
+    const timeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 8000);
 
-    return () => listener?.subscription.unsubscribe();
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        const s = data?.session ?? null;
+        setSession(s);
+        setUser(s?.user ?? null);
+      } catch (e) {
+        console.warn('[Auth] getSession gagal:', e?.message || e);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          clearTimeout(timeout);
+        }
+      }
+    })();
+
+    let subscription;
+    try {
+      const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
+        if (!mounted) return;
+        setSession(s);
+        setUser(s?.user ?? null);
+        setLoading(false);
+      });
+      subscription = listener?.subscription;
+    } catch (e) {
+      console.warn('[Auth] onAuthStateChange gagal:', e?.message || e);
+      if (mounted) setLoading(false);
+    }
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      try {
+        subscription?.unsubscribe();
+      } catch (e) {}
+    };
   }, []);
 
   const value = { user, session, loading };

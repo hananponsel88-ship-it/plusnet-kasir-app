@@ -40,7 +40,7 @@ function AppStack() {
         <Stack.Screen name="DetailProduk" component={DetailProdukScreen} options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="TambahBarang" component={TambahBarangScreen} options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
         <Stack.Screen name="DetailStruk" component={DetailStrukScreen} options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
-        <Stack.Screen name="ScanBarcode" component={ScanBarcodeScreen} options={{ animation: 'fade', presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="ScanBarcode" component={ScanBarcodeScreen} options={{ animation: 'slide_from_right' }} />
       </Stack.Navigator>
     </CartProvider>
   );

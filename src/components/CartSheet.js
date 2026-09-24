@@ -3,37 +3,39 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
-  useRef,
+  useState,
 } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, FlatList } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomSheetModal, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography, shadow } from '../theme';
 import { useCart } from '../context/CartContext';
-import { AppButton, EmptyState } from './UI';
+import { AppButton, EmptyState, AnimatedModal } from './UI';
 import { formatRupiah } from '../utils/format';
 
+// CartSheet berbasis RN Modal (AnimatedModal) — TANPA @gorhom/bottom-sheet,
+// TANPA Reanimated. Dijamin kebuka walau worklets/babel bermasalah.
+// API ref tetap sama: present() / dismiss() supaya KasirScreen tidak perlu diubah.
 const CartSheet = forwardRef(function CartSheet({ onCheckout }, ref) {
   const insets = useSafeAreaInsets();
   const { cartItems, total, count, changeQty, clearCart } = useCart();
-  const sheetRef = useRef(null);
-
-  const snapPoints = useMemo(() => ['48%', '82%'], []);
+  const [visible, setVisible] = useState(false);
 
   useImperativeHandle(ref, () => ({
-    present: () => sheetRef.current?.present(),
-    dismiss: () => sheetRef.current?.dismiss(),
+    present: () => setVisible(true),
+    dismiss: () => setVisible(false),
   }));
 
   useEffect(() => {
-    if (count === 0) sheetRef.current?.dismiss();
+    if (count === 0) setVisible(false);
   }, [count]);
 
   const handleBayar = useCallback(() => {
     if (cartItems.length === 0) return;
-    onCheckout?.();
+    setVisible(false);
+    // Langsung teruskan — KasirScreen yang menampilkan CheckoutModal.
+    // Timeout kecil supaya modal cart sempat turun (tidak tumpuk animasi).
+    setTimeout(() => onCheckout?.(), 80);
   }, [cartItems.length, onCheckout]);
 
   const renderItem = useCallback(
@@ -73,103 +75,97 @@ const CartSheet = forwardRef(function CartSheet({ onCheckout }, ref) {
   );
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={1}
-      snapPoints={snapPoints}
-      backgroundStyle={styles.sheetBg}
-      handleStyle={styles.handleStyle}
-      handleIndicatorStyle={styles.handleIndicator}
-      style={styles.sheetStyle}
-      enablePanDownToClose
-    >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Keranjang</Text>
-          <Text style={styles.subtitle}>
-            {count} Barang Dipilih • {formatRupiah(total)}
-          </Text>
-        </View>
-        {cartItems.length > 0 && (
-          <TouchableOpacity onPress={clearCart} style={styles.clearBtn}>
-            <Ionicons name="trash-bin-outline" size={15} color={colors.error} />
-            <Text style={styles.clearText}>Kosongkan</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <BottomSheetFlatList
-        data={cartItems}
-        keyExtractor={(item) => item.key}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={<EmptyState title="Keranjang Masih Kosong" subtitle="Tap produk untuk mulai menambahkan." icon="cart-outline" />}
-      />
-
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total Ringkasan</Text>
-          <Text style={styles.totalValue}>{formatRupiah(total)}</Text>
+    <AnimatedModal visible={visible} onClose={() => setVisible(false)} align="bottom">
+      <View style={[styles.sheetContainer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        <View style={styles.handle} />
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Keranjang</Text>
+            <Text style={styles.subtitle}>
+              {count} Barang Dipilih • {formatRupiah(total)}
+            </Text>
+          </View>
+          {cartItems.length > 0 && (
+            <TouchableOpacity onPress={clearCart} style={styles.clearBtn}>
+              <Ionicons name="trash-bin-outline" size={15} color={colors.error} />
+              <Text style={styles.clearText}>Kosongkan</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        <View style={styles.actionsRow}>
-          <AppButton
-            title="Struk"
-            variant="outline"
-            icon="receipt-outline"
-            onPress={() =>
-              Alert.alert('Informasi Struk', 'Struk otomatis dapat dicetak setelah transaksi selesai.')
-            }
-            style={styles.flexBtn}
-          />
-          <AppButton
-            title="WhatsApp"
-            variant="outline"
-            icon="logo-whatsapp"
-            onPress={() =>
-              Alert.alert('WhatsApp', 'Nota digital dapat dikirim langsung ke WA pelanggan.')
-            }
-            style={styles.flexBtn}
-          />
-        </View>
-
-        <AppButton
-          title="Bayar"
-          icon="arrow-forward-outline"
-          onPress={handleBayar}
-          disabled={cartItems.length === 0}
-          loading={false}
+        <FlatList
+          data={cartItems}
+          keyExtractor={(item) => item.key}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          style={styles.list}
+          ListEmptyComponent={<EmptyState title="Keranjang Masih Kosong" subtitle="Tap produk untuk mulai menambahkan." icon="cart-outline" />}
         />
+
+        <View style={styles.footer}>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total Ringkasan</Text>
+            <Text style={styles.totalValue}>{formatRupiah(total)}</Text>
+          </View>
+
+          <View style={styles.actionsRow}>
+            <AppButton
+              title="Struk"
+              variant="outline"
+              icon="receipt-outline"
+              onPress={() =>
+                Alert.alert('Informasi Struk', 'Struk otomatis dapat dicetak setelah transaksi selesai.')
+              }
+              style={styles.flexBtn}
+            />
+            <AppButton
+              title="WhatsApp"
+              variant="outline"
+              icon="logo-whatsapp"
+              onPress={() =>
+                Alert.alert('WhatsApp', 'Nota digital dapat dikirim langsung ke WA pelanggan.')
+              }
+              style={styles.flexBtn}
+            />
+          </View>
+
+          <AppButton
+            title="Bayar"
+            icon="arrow-forward-outline"
+            onPress={handleBayar}
+            disabled={cartItems.length === 0}
+            loading={false}
+          />
+        </View>
       </View>
-    </BottomSheetModal>
+    </AnimatedModal>
   );
 });
 
 const styles = StyleSheet.create({
-  sheetBg: {
+  sheetContainer: {
     backgroundColor: colors.surfaceContainerLowest,
-  },
-  sheetStyle: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
-    overflow: 'hidden',
+    padding: spacing.md,
+    paddingTop: spacing.sm,
+    maxHeight: '82%',
+    minHeight: '48%',
     ...shadow.sheet,
   },
-  handleStyle: {
-    paddingTop: spacing.sm,
-  },
-  handleIndicator: {
+  handle: {
     width: 36,
     height: 4,
-    borderRadius: 2,
     backgroundColor: colors.outlineVariant,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: spacing.sm,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairline,
@@ -197,9 +193,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Manrope_700Bold',
   },
+  list: { maxHeight: 320 },
   listContent: {
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   itemCard: {
@@ -259,7 +255,6 @@ const styles = StyleSheet.create({
   footer: {
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
-    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     gap: spacing.xs,
   },

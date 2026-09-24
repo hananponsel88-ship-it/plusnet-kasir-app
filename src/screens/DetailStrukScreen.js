@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  Linking,
 } from 'react-native';
 import { supabase } from '../utils/supabase';
 import { colors, radius, spacing, typography } from '../theme';
@@ -37,6 +38,40 @@ export default function DetailStrukScreen({ route, navigation }) {
   const subTotal = Number(detail.subtotal || items.reduce((s, it) => s + Number(it.subtotal || 0), 0));
   const tax = Number(detail.tax || Math.round(subTotal * 0.11));
   const total = Number(detail.total || subTotal + tax);
+
+  // Expo Go: ganti print fisik jadi share via WhatsApp (tanpa native module).
+  const buildStrukMessage = () => {
+    const lines = [
+      `*PLUSNET POS DIGITAL*`,
+      `ID: ${detail.code || 'TRX-' + String(detail.id).slice(0, 4)}`,
+      `${formatDate(detail.created_at)} ${formatTime(detail.created_at)}`,
+      `Status: ${detail.status === 'pending' ? 'Pending' : 'Lunas'}`,
+      `------------------------------`,
+      ...items.map(
+        (it) => `${it.product_name}\n${it.quantity} x ${formatRupiah(it.unit_price)} = ${formatRupiah(it.subtotal)}`
+      ),
+      `------------------------------`,
+      `Subtotal: ${formatRupiah(subTotal)}`,
+      `Pajak (${detail.tax_rate ?? 11}%): ${formatRupiah(tax)}`,
+      `*Grand Total: ${formatRupiah(total)}*`,
+      `Terima kasih telah berbelanja!`,
+    ];
+    return lines.join('\n');
+  };
+
+  const handleShareWA = async () => {
+    const url = `https://wa.me/?text=${encodeURIComponent(buildStrukMessage())}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert('WhatsApp', 'Tidak dapat membuka WhatsApp di perangkat ini.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      Alert.alert('WhatsApp', 'Gagal membuka WhatsApp.');
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -81,19 +116,13 @@ export default function DetailStrukScreen({ route, navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
+        {/* Mode Expo Go: tombol print fisik dinonaktifkan, ganti share WhatsApp */}
         <AppButton
-          title="Print Ulang"
-          variant="outline"
-          icon="print-outline"
-          style={{ flex: 1 }}
-          onPress={() => Alert.alert('Print', 'Mengirim struk ke printer...')}
-        />
-        <AppButton
-          title="Kirim WhatsApp"
-          variant="outline"
+          title="Bagikan via WhatsApp"
+          variant="primary"
           icon="chatbubble-ellipses-outline"
           style={{ flex: 1 }}
-          onPress={() => Alert.alert('WhatsApp', 'Struk dikirim ke WhatsApp pelanggan.')}
+          onPress={handleShareWA}
         />
       </View>
     </View>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,64 +11,34 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
-import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  Easing,
-  FadeInUp,
-  interpolate,
-  useAnimatedProps,
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { colors, radius, spacing, typography, shadow } from '../theme';
 import { AppButton, AnimatedModal } from './UI';
 import { formatRupiah } from '../utils/format';
 
-const AnimatedText = Animated.createAnimatedComponent(Text);
-
-function rupiahWorklet(n) {
-  'worklet';
-  const num = Math.abs(Math.round(n));
-  const s = String(num);
-  let out = '';
-  let c = 0;
-  for (let i = s.length - 1; i >= 0; i--) {
-    out = s[i] + out;
-    c++;
-    if (c % 3 === 0 && i > 0) out = '.' + out;
-  }
-  return 'Rp ' + out;
+function hapticLight() {
+  try {
+    const Haptics = require('expo-haptics');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  } catch {}
 }
-
-// Angka Kembalian dengan count-up/count-down ringan (worklet, native driver).
-function AnimatedAmount({ value, style }) {
-  const to = Number(value) || 0;
-  const from = useSharedValue(to);
-  const progress = useSharedValue(0);
-  const prev = useRef(to);
-
-  useEffect(() => {
-    if (to === prev.current) return;
-    from.value = prev.current;
-    prev.current = to;
-    progress.value = 0;
-    progress.value = withTiming(1, {
-      duration: 480,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [to, from, progress]);
-
-  const animatedProps = useAnimatedProps(() => {
-    const current = interpolate(progress.value, [0, 1], [from.value, to]);
-    return { text: rupiahWorklet(current) };
-  });
-
-  return <AnimatedText animatedProps={animatedProps} style={style} />;
+function hapticSuccess() {
+  try {
+    const Haptics = require('expo-haptics');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  } catch {}
+}
+function hapticError() {
+  try {
+    const Haptics = require('expo-haptics');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+  } catch {}
+}
+function hapticWarn() {
+  try {
+    const Haptics = require('expo-haptics');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+  } catch {}
 }
 
 const PAYMENT_METHODS = [
@@ -77,11 +47,12 @@ const PAYMENT_METHODS = [
   { id: 'transfer', label: 'Transfer', icon: 'card-outline' },
 ];
 
-const QUICK_NOMINALS = [4000, 20000, 50000, 100000];
+const QUICK_NOMINALS = [20000, 50000, 100000];
 
+// Checkout berbasis RN Modal — TANPA BottomSheet, TANPA Reanimated.
+// visible langsung mengontrol Modal, jadi tidak ada present()/dismiss() yang bisa no-op.
 export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPayment }) {
   const insets = useSafeAreaInsets();
-  const sheetRef = useRef(null);
   const notifiedRef = useRef(false);
 
   const [method, setMethod] = useState('cash');
@@ -90,7 +61,6 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
   const [success, setSuccess] = useState(false);
   const [payError, setPayError] = useState(null);
 
-  const snapPoints = useMemo(() => ['94%'], []);
   const paid = method === 'cash' ? Number(cashAmount) || 0 : total;
   const change = Math.max(0, paid - total);
 
@@ -109,89 +79,48 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
       setSuccess(false);
       setPayError(null);
       setSubmitting(false);
-      setCashAmount('');
-      // Tunda present satu frame agar layout BottomSheetModal sudah commit
-      // sebelum present() dipanggil (mencegah present yang no-op).
-      const raf = requestAnimationFrame(() => {
-        sheetRef.current?.present();
-      });
-      return () => cancelAnimationFrame(raf);
-    } else {
-      sheetRef.current?.dismiss();
+      // Auto-isi Uang Pas supaya Bayar Fast = 1 tap langsung "Selesaikan".
+      setCashAmount(total ? String(total) : '');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Animasi pop sukses
-  const successScale = useSharedValue(0.4);
-  const successOpacity = useSharedValue(0);
-
-  useEffect(() => {
-    if (success) {
-      successOpacity.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
-      successScale.value = withSequence(
-        withSpring(1.15, { damping: 9, stiffness: 240 }),
-        withSpring(1, { damping: 13, stiffness: 260 })
-      );
-    }
-  }, [success, successOpacity, successScale]);
-
-  const successOverlayStyle = useAnimatedStyle(() => ({
-    opacity: successOpacity.value,
-  }));
-
-  const successCircleStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: successScale.value }],
-  }));
-
   const handlePay = useCallback(async () => {
+    if (submitting || success) return;
     if (method === 'cash' && paid < total) {
       Alert.alert('Uang Kurang', 'Nominal pembayaran tunai kurang dari total belanja.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      hapticWarn();
       return;
     }
     setSubmitting(true);
     setPayError(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    hapticLight();
     try {
       Keyboard.dismiss();
       await onConfirmPayment(method);
       setSuccess(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      hapticSuccess();
       setTimeout(() => {
         setSubmitting(false);
         notify(true);
-      }, 1150);
+      }, 650);
     } catch (e) {
       setSubmitting(false);
       setPayError(e?.message || 'Transaksi gagal, coba lagi.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      hapticError();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method, paid, total, onConfirmPayment, notify]);
+  }, [method, paid, total, onConfirmPayment, notify, submitting, success]);
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      backgroundStyle={styles.sheetBg}
-      handleStyle={styles.handleStyle}
-      handleIndicatorStyle={styles.handleIndicator}
-      style={styles.sheetStyle}
-      enablePanDownToClose={!submitting}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      onDismiss={() => notify(false)}
-    >
-      <View style={styles.root}>
-        <BottomSheetView style={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+    <AnimatedModal visible={visible} onClose={() => !submitting && notify(false)} align="bottom">
+      <View style={[styles.sheetContainer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        <View style={styles.handle} />
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.headerRow}>
             <Text style={styles.modalTitle}>Pembayaran</Text>
             <TouchableOpacity
-              onPress={() => {
-                notify(false);
-                sheetRef.current?.dismiss();
-              }}
+              onPress={() => notify(false)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Ionicons name="close-circle" size={24} color={colors.secondary} />
@@ -248,12 +177,19 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
               </View>
               <Text style={[styles.sectionLabel, styles.nominalHint]}>Nominal Uang Diterima</Text>
               <View style={styles.quickRow}>
+                <TouchableOpacity
+                  style={[styles.quickChip, styles.quickChipPas]}
+                  onPress={() => setCashAmount(String(total))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.quickChipText, styles.quickChipTextPas]}>Uang Pas</Text>
+                </TouchableOpacity>
                 {QUICK_NOMINALS.map((nom) => (
                   <TouchableOpacity
                     key={nom}
                     style={styles.quickChip}
                     onPress={() => setCashAmount(String(nom))}
-                    activeOpacity={0.8}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.quickChipText}>{formatRupiah(nom)}</Text>
                   </TouchableOpacity>
@@ -264,13 +200,10 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
 
           {/* Kembalian */}
           {method === 'cash' && paid >= total && (
-            <Animated.View
-              entering={FadeInUp.springify().damping(16).stiffness(180)}
-              style={styles.changeBox}
-            >
+            <View style={styles.changeBox}>
               <Text style={styles.changeLabel}>Kembalian</Text>
-              <AnimatedAmount value={change} style={styles.changeValue} />
-            </Animated.View>
+              <Text style={styles.changeValue}>{formatRupiah(change)}</Text>
+            </View>
           )}
 
           {payError ? (
@@ -289,12 +222,12 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
               loading={submitting}
             />
           </View>
-        </BottomSheetView>
+        </ScrollView>
 
         {/* Pop-up sukses */}
         {success && (
-          <Animated.View style={[StyleSheet.absoluteFill, styles.successOverlay, successOverlayStyle]}>
-            <Animated.View style={[styles.successCircle, successCircleStyle]}>
+          <View style={[StyleSheet.absoluteFill, styles.successOverlay]}>
+            <View style={styles.successCircle}>
               <LinearGradient
                 colors={[colors.gradient.start, colors.gradient.end]}
                 start={{ x: 0, y: 0 }}
@@ -302,13 +235,13 @@ export function CheckoutModal({ visible, cartItems, total, onClose, onConfirmPay
                 style={StyleSheet.absoluteFill}
               />
               <Ionicons name="checkmark" size={52} color={colors.onPrimary} />
-            </Animated.View>
+            </View>
             <Text style={styles.successTitle}>Transaksi Berhasil!</Text>
             <Text style={styles.successSub}>Pembayaran telah diterima. Menyiapkan struk...</Text>
-          </Animated.View>
+          </View>
         )}
       </View>
-    </BottomSheetModal>
+    </AnimatedModal>
   );
 }
 
@@ -519,6 +452,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'Manrope_700Bold',
     color: colors.onSurface,
+  },
+  quickChipPas: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primary,
+  },
+  quickChipTextPas: {
+    color: colors.primary,
+    fontFamily: 'Manrope_800ExtraBold',
   },
   changeBox: {
     flexDirection: 'row',

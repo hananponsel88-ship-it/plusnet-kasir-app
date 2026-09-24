@@ -9,6 +9,7 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -66,6 +67,38 @@ export default function RiwayatScreen({ navigation }) {
     });
   };
 
+  // Expo Go: ganti cetak fisik jadi bagikan struk via WhatsApp (tanpa native module).
+  const handleShareTxWA = async (tx) => {
+    if (!tx) return;
+    const itemLines = (tx.items || []).map(
+      (prod) =>
+        `${prod.name}\n${prod.quantity} x ${formatRupiah(prod.price)} = ${formatRupiah(
+          (prod.quantity || 1) * (prod.price || 0)
+        )}`
+    );
+    const message = [
+      `*PLUSNET POS DIGITAL*`,
+      `Struk Transaksi #${tx.id}`,
+      `${formatDate(tx.created_at)}`,
+      `------------------------------`,
+      ...itemLines,
+      `------------------------------`,
+      `*Total: ${formatRupiah(tx.total)}*`,
+      `Metode: ${tx.payment_method || 'CASH'}`,
+    ].join('\n');
+    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        Alert.alert('WhatsApp', 'Tidak dapat membuka WhatsApp di perangkat ini.');
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (e) {
+      Alert.alert('WhatsApp', 'Gagal membuka WhatsApp.');
+    }
+  };
+
   return (
     <View style={styles.screen}>
       {/* Top Header */}
@@ -74,7 +107,7 @@ export default function RiwayatScreen({ navigation }) {
           <BackButton />
           <View>
             <Text style={styles.headerTitle}>Riwayat Transaksi</Text>
-            <Text style={styles.headerSubtitle}>Pantau & cetak ulang struk penjualan</Text>
+            <Text style={styles.headerSubtitle}>Pantau & bagikan struk via WhatsApp</Text>
           </View>
         </View>
 
@@ -196,16 +229,14 @@ export default function RiwayatScreen({ navigation }) {
 
                 <TouchableOpacity
                   style={styles.printBtn}
-                  onPress={() => {
-                    Alert.alert('Cetak Struk', 'Fitur cetak printer bluetooth siap digunakan!');
-                  }}
+                  onPress={() => handleShareTxWA(selectedTx)}
                 >
                   <LinearGradient
                     colors={[colors.gradient?.start || '#00B86B', colors.gradient?.end || '#008F53']}
                     style={styles.printGradient}
                   >
-                    <Ionicons name="print-outline" size={18} color="#FFF" />
-                    <Text style={styles.printBtnText}>Cetak Struk</Text>
+                    <Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFF" />
+                    <Text style={styles.printBtnText}>Bagikan WA</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>

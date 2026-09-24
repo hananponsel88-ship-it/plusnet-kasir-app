@@ -4,6 +4,7 @@
     "slug": "plusnet-kasir-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "newArchEnabled": true,
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/logo  bnr.png",
@@ -41,7 +42,8 @@
         }
       ],
       "expo-audio",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

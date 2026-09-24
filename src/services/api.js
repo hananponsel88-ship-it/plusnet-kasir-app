@@ -2,11 +2,12 @@ import { supabase } from '../utils/supabase';
 
 // === PRODUCTS ===
 
-export async function fetchProducts({ query = '', category = '' } = {}) {
+export async function fetchProducts({ query = '', category = '', limit = 100 } = {}) {
   let builder = supabase
     .from('products')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
   if (category) builder = builder.eq('category', category);
   if (query) builder = builder.ilike('name', `%${query}%`);
@@ -122,9 +123,10 @@ export async function createTransaction({ subtotal, tax, total, paymentMethod, i
 
   if (itemsError) throw itemsError;
 
-  for (const it of items) {
-    await adjustStock(it.product_id, it.quantity, it.unit_type, 'out', `Penjualan ${next}`);
-  }
+  // Paralel supaya checkout terasa cepat (sebelumnya sequential: 3 query x N item).
+  await Promise.all(
+    items.map((it) => adjustStock(it.product_id, it.quantity, it.unit_type, 'out', `Penjualan ${next}`))
+  );
 
   return trx;
 }

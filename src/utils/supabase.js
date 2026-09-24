@@ -15,7 +15,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Fallback placeholder agar APK tidak crash total saat dibuka bila env
+// belum ke-embed (mis. lupa set di EAS). App tetap terbuka, request
+// Supabase gagal dengan pesan jelas, bukan white-screen/crash native.
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key',
+  {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,

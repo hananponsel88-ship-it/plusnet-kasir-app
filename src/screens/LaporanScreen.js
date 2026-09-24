@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -157,6 +159,36 @@ const triggerSuccessModal = () => {
 const closeSuccessModal = () => {
   setShowSuccessModal(false);
 };
+
+  // Expo Go: ganti cetak fisik jadi bagikan ringkasan via WhatsApp (tanpa native module).
+  const handleShareLaporanWA = async () => {
+    const message = [
+      `*Laporan Keuangan - ${formatDateIndo(selectedDate)}*`,
+      `------------------------------`,
+      `Warnet: ${formatRupiah(parseNum(masukWarnet))}`,
+      `Fotocopy: ${formatRupiah(parseNum(masukFotocopy))}`,
+      `Pulsa: ${formatRupiah(parseNum(masukPulsa))}`,
+      `Lainnya: ${formatRupiah(parseNum(masukLainnya))}`,
+      `------------------------------`,
+      `Uang Masuk: ${formatRupiah(totalUangMasuk)}`,
+      `Uang Keluar: ${formatRupiah(totalKeluarNum)}`,
+      `*Total Hari Ini: ${formatRupiah(totalHariIni)}*`,
+    ].join('\n');
+    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        setShowExportModal(false);
+        setModalMessage('Tidak dapat membuka WhatsApp di perangkat ini.');
+        triggerSuccessModal();
+        return;
+      }
+      setShowExportModal(false);
+      await Linking.openURL(url);
+    } catch (e) {
+      Alert.alert('WhatsApp', 'Gagal membuka WhatsApp.');
+    }
+  };
 
   const categories = [
     { key: 'Kas', icon: 'wallet-outline' },
@@ -418,14 +450,14 @@ const closeSuccessModal = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Tombol Ekspor Excel */}
+          {/* Tombol Bagikan / Ekspor */}
           <TouchableOpacity
             style={styles.exportBtn}
             onPress={() => setShowExportModal(true)}
             activeOpacity={0.85}
           >
-            <Ionicons name="document-text-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.exportBtnText}>Cetak / Ekspor Laporan Excel</Text>
+            <Ionicons name="share-social-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.exportBtnText}>Bagikan / Ekspor Laporan</Text>
           </TouchableOpacity>
         </ScrollView>
 
@@ -445,11 +477,22 @@ const closeSuccessModal = () => {
         {/* Modal Pop-up Ekspor */}
         <AnimatedModal visible={showExportModal} onClose={() => setShowExportModal(false)} align="center">
           <View style={styles.exportCard}>
-              <Text style={styles.exportModalTitle}>Ekspor Laporan Keuangan</Text>
-              <Text style={styles.exportModalSub}>Pilih format pengeluaran laporan untuk tanggal ini.</Text>
+              <Text style={styles.exportModalTitle}>Bagikan Laporan Keuangan</Text>
+              <Text style={styles.exportModalSub}>Pilih cara bagikan laporan untuk tanggal ini (mode Expo Go, tanpa print fisik).</Text>
 
               <TouchableOpacity
                 style={styles.exportOption}
+                onPress={handleShareLaporanWA}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={24} color="#1E5E25" style={{ marginRight: 12 }} />
+                <View>
+                  <Text style={styles.exportOptionTitle}>Bagikan via WhatsApp</Text>
+                  <Text style={styles.exportOptionSub}>Kirim ringkasan laporan harian</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.exportOption, { marginTop: 8 }]}
                 onPress={() => {
                   setShowExportModal(false);
                   setModalMessage(`Berkas Excel (.xlsx) untuk ${formatDateIndo(selectedDate)} telah berhasil diunduh.`);

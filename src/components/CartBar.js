@@ -1,134 +1,90 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  FadeInUp,
-  FadeOutDown,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withSequence,
-} from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import { colors, radius, spacing, shadow } from '../theme';
 import { useCart } from '../context/CartContext';
 import { formatRupiah } from '../utils/format';
 
-export default function CartBar({ onPay, onOpenCart, style }) {
+// CartBar polos (tanpa Reanimated) supaya sentuhan selalu masuk,
+// bahkan jika worklets / babel plugin bermasalah.
+export default function CartBar({ onPay, onOpenCart, onPayEmpty, style }) {
   const { total, count } = useCart();
 
-  // Pop micro-animation pada badge setiap kali jumlah barang bertambah.
-  const badgeScale = useSharedValue(1);
-  const prevCount = useRef(count);
-
-  useEffect(() => {
-    if (count > prevCount.current && prevCount.current >= 0) {
-      badgeScale.value = withSequence(
-        withSpring(1.5, { damping: 7, stiffness: 320 }),
-        withSpring(0.85, { damping: 8, stiffness: 300 }),
-        withSpring(1, { damping: 11, stiffness: 220 })
-      );
-    }
-    prevCount.current = count;
-  }, [count, badgeScale]);
-
-  const badgeStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: badgeScale.value }],
-  }));
-
-  // Press-scale + haptic ringan untuk tombol Bayar Fast.
-  const payScale = useSharedValue(1);
-  const payBtnStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: payScale.value }],
-  }));
-
-  const payPressIn = useCallback(() => {
-    payScale.value = withSpring(0.94, { damping: 20, stiffness: 400 });
-  }, [payScale]);
-
-  const payPressOut = useCallback(() => {
-    payScale.value = withSpring(1, { damping: 14, stiffness: 260 });
-  }, [payScale]);
-
   const handlePay = useCallback(() => {
-    if (count === 0) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (count === 0) {
+      onPayEmpty?.();
+      return;
+    }
+    try {
+      const Haptics = require('expo-haptics');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch {}
     onPay?.();
-  }, [onPay, count]);
+  }, [onPay, onPayEmpty, count]);
 
   const handleOpenCart = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    try {
+      const Haptics = require('expo-haptics');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    } catch {}
     onOpenCart?.();
   }, [onOpenCart]);
 
   return (
-    <Animated.View
-      entering={FadeInUp.springify().damping(17).stiffness(150)}
-      exiting={FadeOutDown.springify().damping(17).stiffness(150)}
-      style={[styles.container, style]}
-      pointerEvents="auto"
-    >
+    <View style={[styles.container, style]} pointerEvents="auto">
       <LinearGradient
         colors={[colors.gradientDark.start, colors.gradientDark.end]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.bar}
       >
-        <Pressable
+        <TouchableOpacity
           style={styles.tapArea}
           onPress={handleOpenCart}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel="Lihat keranjang"
-          android_ripple={{ color: 'rgba(255,255,255,0.08)', borderless: false }}
+          activeOpacity={0.8}
         >
           <View style={styles.iconWrapper}>
             <Ionicons name="basket" size={21} color={colors.primaryContainer} />
-            <Animated.View style={[styles.badge, badgeStyle]}>
+            <View style={styles.badge}>
               <Text style={styles.badgeText}>{count}</Text>
-            </Animated.View>
+            </View>
           </View>
           <View>
             <Text style={styles.itemCountText}>{count} Barang di Keranjang</Text>
             <Text style={styles.totalPriceText}>{formatRupiah(total)}</Text>
           </View>
-        </Pressable>
+        </TouchableOpacity>
 
-        {/* Tombol Bayar Fast: Pressable polos di lapisan terluar supaya
-            jalur sentuh tidak melewati Animated.View (lebih andal di Android),
-            animasi scale hanya sebagai visual di dalam. */}
-        <Pressable
-          onPressIn={payPressIn}
-          onPressOut={payPressOut}
+        <TouchableOpacity
           onPress={handlePay}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel="Bayar cepat"
-          android_ripple={{ color: 'rgba(255,255,255,0.16)', borderless: false }}
-          style={({ pressed }) => [styles.payButton, pressed && styles.payButtonPressed]}
+          activeOpacity={0.85}
+          style={styles.payButton}
         >
-          <Animated.View style={[styles.payClip, payBtnStyle]}>
-            <LinearGradient
-              colors={[colors.gradient.start, colors.gradient.end]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.payGradient}
-            >
-              <Text style={styles.payText}>Bayar Fast</Text>
-              <Ionicons name="flash" size={15} color={colors.onPrimary} />
-            </LinearGradient>
-          </Animated.View>
-        </Pressable>
+          <LinearGradient
+            colors={[colors.gradient.start, colors.gradient.end]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.payGradient}
+          >
+            <Text style={styles.payText}>Bayar Fast</Text>
+            <Ionicons name="flash" size={15} color={colors.onPrimary} />
+          </LinearGradient>
+        </TouchableOpacity>
       </LinearGradient>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     borderRadius: radius.xl,
-    // Pastikan bar selalu di atas daftar produk (urutan sentuh Android ikut elevation/zIndex).
     zIndex: 10,
     elevation: 16,
     ...shadow.sheet,
@@ -191,14 +147,8 @@ const styles = StyleSheet.create({
   },
   payButton: {
     borderRadius: radius.lg,
-    ...shadow.btn,
-  },
-  payButtonPressed: {
-    opacity: 0.92,
-  },
-  payClip: {
-    borderRadius: radius.lg,
     overflow: 'hidden',
+    ...shadow.btn,
   },
   payGradient: {
     flexDirection: 'row',

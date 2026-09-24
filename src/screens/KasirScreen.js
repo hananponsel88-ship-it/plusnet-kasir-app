@@ -37,6 +37,8 @@ export default function KasirScreen({ navigation }) {
   const [receipt, setReceipt] = useState(null);
   const [error, setError] = useState(null);
   const [storeName, setStoreName] = useState('PlusNet Kasir');
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -53,44 +55,50 @@ export default function KasirScreen({ navigation }) {
     })();
   }, []);
 
+  // Debounce ketikan search supaya tidak query Supabase tiap karakter (lebih responsif).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
   const load = useCallback(async () => {
+    const id = ++requestIdRef.current;
     try {
       setError(null);
-      const list = await fetchProducts({ query, category: category === 'Semua' ? '' : category });
-      setProducts(list);
+      const list = await fetchProducts({
+        query: debouncedQuery,
+        category: category === 'Semua' ? '' : category,
+        limit: 100,
+      });
+      if (requestIdRef.current === id) setProducts(list);
     } catch (e) {
-      setError(e.message);
+      if (requestIdRef.current === id) setError(e.message);
     }
-  }, [query, category]);
+  }, [debouncedQuery, category]);
 
   useFocusEffect(
     useCallback(() => {
-      const t = setTimeout(load, 50);
-      return () => clearTimeout(t);
+      load();
     }, [load])
   );
 
+  // Stacking, bukan dismiss-dulu: Checkout di-present di atas CartSheet.
+  // Ini menghilangkan race dismiss-vs-present yang bikin Bayar Fast no-op / freeze.
+  // CartSheet tetap di bawah; setelah bayar sukses ia auto-dismiss via count===0.
   const openCheckout = () => {
-    if (cartItems.length === 0) return;
+    if (cartItems.length === 0 || showCheckout) return;
     setCheckoutDirect(false);
-    cartSheetRef.current?.dismiss();
-    setTimeout(() => setShowCheckout(true), 240);
-  };
-
-  const openCheckoutFast = () => {
-    if (cartItems.length === 0) return;
-    setCheckoutDirect(true);
-    // Defensif: pastikan cart sheet tertutup dulu supaya tidak ada dua
-    // BottomSheetModal yang beranimasi/present bersamaan (no-op bila sudah tertutup).
-    cartSheetRef.current?.dismiss();
     setShowCheckout(true);
   };
 
-  const tutupCheckout = (afterPay = false) => {
+  const openCheckoutFast = () => {
+    if (cartItems.length === 0 || showCheckout) return;
+    setCheckoutDirect(true);
+    setShowCheckout(true);
+  };
+
+  const tutupCheckout = () => {
     setShowCheckout(false);
-    if (!checkoutDirect && !afterPay) {
-      setTimeout(() => cartSheetRef.current?.present(), 300);
-    }
   };
 
   const handlePay = async (paymentMethod) => {
@@ -203,6 +211,11 @@ export default function KasirScreen({ navigation }) {
         columnWrapperStyle={styles.gridRow}
         contentContainerStyle={[styles.listContent, count > 0 && { paddingBottom: 130 }]}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <EmptyState
             title="Produk Tidak Ditemukan"
@@ -256,7 +269,7 @@ export default function KasirScreen({ navigation }) {
   );
 }
 
-function ProductCard({ product, onAdd }) {
+const ProductCard = React.memo(function ProductCard({ product, onAdd }) {
   const [unit, setUnit] = useState('unit');
   const price =
     unit === 'unit' ? Number(product.price_per_unit || 0) : Number(product.price_per_pack || 0);
@@ -304,14 +317,14 @@ function ProductCard({ product, onAdd }) {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.addBtn} onPress={() => onAdd(product, unit)} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.addBtn} onPress={() => onAdd(product, unit)} activeOpacity={0.7}>
             <Ionicons name="add" size={18} color={colors.onPrimary} />
           </TouchableOpacity>
         </View>
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surfaceContainerLowest },
